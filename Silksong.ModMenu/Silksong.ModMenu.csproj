@@ -82,7 +82,7 @@
       <Binaries Include="$(TargetDir)/$(TargetName).xml" />
     </ItemGroup>
     <PropertyGroup>
-      <ThunderstoreDir>$(SolutionDir)/thunderstore</ThunderstoreDir>
+      <ThunderstoreDir>$(MSBuildProjectDirectory)/../thunderstore</ThunderstoreDir>
     </PropertyGroup>
     <Copy
       SourceFiles="@(Binaries)"

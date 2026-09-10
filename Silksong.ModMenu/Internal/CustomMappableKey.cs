@@ -1,7 +1,6 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using GlobalEnums;
 using InControl;
-using Silksong.ModMenu.Models;
 using TeamCherry.Localization;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -14,26 +13,22 @@ namespace Silksong.ModMenu.Internal;
 //  1) All references to PlayerActions and BindingSources have been removed.
 //  2) Methods that now do nothing have been removed / inlined.
 //  3) Dumb things like member variables that should be constants have been refactored.
-internal class CustomMappableKey
+//  3) Vanilla only supports single keys. ModMenu also handles KeyboardShortcuts with modifiers,
+//     so it has been split into KeyCodeMappableKey and KeyboardShortcutMappableKey.
+internal abstract class CustomMappableKey
     : MenuButton,
         ISubmitHandler,
         IEventSystemHandler,
         IPointerClickHandler,
         ICancelHandler
 {
-    private static readonly HashSet<KeyBindingSource> unmappableKeys =
-    [
-        new(Key.Escape),
-        new(Key.Return),
-        new(Key.Numlock),
-        new(Key.LeftCommand),
-        new(Key.RightCommand),
-    ];
+    protected static readonly HashSet<Key> unmappableKeys = [Key.Escape, Key.Return, Key.Numlock];
 
     internal Text? KeymapText { get; private set; }
     internal Image? KeymapImage { get; private set; }
 
-    internal static CustomMappableKey Replace(MappableKey src)
+    internal static T Replace<T>(MappableKey src)
+        where T : CustomMappableKey
     {
         // We copy all the necessary fields over one-by-one rather than modifying the MappableKey source code directly.
         // The number and scale of source edits required to decouple from PlayerAction would be far worse to execute via ILHooks.
@@ -49,10 +44,10 @@ internal class CustomMappableKey
         var obj = src.gameObject;
         DestroyImmediate(src); // We cannot wait 1 frame to add a new Selectable component.
 
-        CustomMappableKey dest;
+        T dest;
         using (obj.TempInactive())
         {
-            dest = obj.AddComponent<CustomMappableKey>();
+            dest = obj.AddComponent<T>();
             dest.animationTriggers = animationTriggers;
             dest.buttonType = MenuButtonType.Proceed;
             dest.cancelAction = CancelAction.DoNothing;
@@ -68,33 +63,25 @@ internal class CustomMappableKey
             dest.rightCursor = rightCursor;
             dest.transition = Transition.None;
             dest.uiAudioPlayer = UIManager.instance.uiAudioPlayer;
+            dest.OnReplaced();
         }
 
         return dest;
     }
 
     private bool isListening;
-    private readonly KeyBindingSourceListener listener = new();
 
-    internal IValueModel<KeyCode>? KeyCodeModel
-    {
-        get => field;
-        set
-        {
-            if (field == value)
-                return;
-            field?.OnValueChanged -= OnKeyCodeChanged;
-            field = value;
-            field?.OnValueChanged += OnKeyCodeChanged;
+    protected abstract void ResetListener();
 
-            ShowCurrentKeyCode();
-        }
-    }
+    protected abstract void ListenUpdate();
 
-    private void OnKeyCodeChanged(KeyCode keyCode) => ShowCurrentKeyCode();
+    protected abstract Key CurrentMainKey { get; }
 
-    private InputHandler.KeyOrMouseBinding CurrentBinding =>
-        new(isListening ? Key.None : KeyCodeUtil.ToKey(KeyCodeModel?.Value ?? KeyCode.None));
+    protected abstract void ShowCurrentValue();
+
+    protected virtual void ClearCustomVisuals() { }
+
+    protected virtual void OnReplaced() { }
 
     private new void OnDisable()
     {
@@ -105,37 +92,21 @@ internal class CustomMappableKey
 
     private static UIButtonSkins UIButtonSkins => GameManager.instance.ui.uiButtonSkins;
 
-    private void ListenForNewButton()
+    private void StartListening()
     {
         if (isListening || KeymapText == null || KeymapImage == null)
             return;
 
         interactable = false;
         isListening = true;
-        listener.Reset();
-        ShowCurrentKeyCode();
+        ResetListener();
+        ShowCurrentBinding();
     }
 
-    private static bool GetKey(KeyBindingSource keyBinding, out Key key)
+    protected void StopListening()
     {
-        List<Key> keys = [];
-        for (int i = 0; i < keyBinding.Control.IncludeCount; i++)
-        {
-            var ret = keyBinding.Control.GetInclude(i);
-            if (ret != Key.None)
-                keys.Add(ret);
-        }
-
-        if (keys.Count == 1)
-        {
-            key = keys[0];
-            return true;
-        }
-        else
-        {
-            key = Key.None;
-            return false;
-        }
+        isListening = false;
+        interactable = true;
     }
 
     private void Update()
@@ -143,30 +114,15 @@ internal class CustomMappableKey
         if (!isListening)
             return;
 
-        var source = listener.Listen(
-            new() { IncludeKeys = true, IncludeModifiersAsFirstClassKeys = true },
-            InputManager.ActiveDevice
-        );
-
-        if (
-            source is KeyBindingSource keyBinding
-            && !unmappableKeys.Contains(keyBinding)
-            && GetKey(keyBinding, out var key)
-        )
-        {
-            isListening = false;
-            interactable = true;
-            KeyCodeModel?.Value = KeyCodeUtil.ToKeyCode(key);
-            ShowCurrentKeyCode();
-        }
-        else if (source != null)
-            AbortRebind();
+        ListenUpdate();
     }
 
-    public void ShowCurrentKeyCode()
+    public void ShowCurrentBinding()
     {
         if (KeymapText == null || KeymapImage == null)
             return;
+
+        ClearCustomVisuals();
 
         var skins = UIButtonSkins;
         if (isListening)
@@ -178,7 +134,7 @@ internal class CustomMappableKey
             KeymapText.horizontalOverflow = MappableKey.blankOverflow;
             KeymapText.GetComponent<FixVerticalAlign>().AlignText();
         }
-        else if (InputHandler.KeyOrMouseBinding.IsNone(CurrentBinding))
+        else if (CurrentMainKey == Key.None)
         {
             KeymapImage.sprite = skins.blankKey;
             KeymapText.text = Language.Get("KEYBOARD_UNMAPPED", "MainMenu");
@@ -189,48 +145,89 @@ internal class CustomMappableKey
             KeymapText.GetComponent<FixVerticalAlign>().AlignText();
         }
         else
-        {
-            ButtonSkin keyboardSkinFor = skins.GetButtonSkinFor(CurrentBinding.ToString());
-            KeymapImage.sprite =
-                keyboardSkinFor.sprite != null ? keyboardSkinFor.sprite : skins.blankKey;
-            KeymapText.text = keyboardSkinFor.symbol;
-            if (keyboardSkinFor.skinType == ButtonSkinType.SQUARE)
-            {
-                KeymapText.fontSize = MappableKey.sqrFontSize;
-                KeymapText.alignment = MappableKey.sqrAlignment;
-                KeymapText.rectTransform.anchoredPosition = new(
-                    MappableKey.sqrX,
-                    KeymapText.rectTransform.anchoredPosition.y
-                );
-                KeymapText.rectTransform.SetSizeWithCurrentAnchors(
-                    RectTransform.Axis.Horizontal,
-                    MappableKey.sqrWidth
-                );
-                KeymapText.resizeTextForBestFit = MappableKey.sqrBestFit;
-                KeymapText.resizeTextMinSize = MappableKey.sqrMinFont;
-                KeymapText.resizeTextMaxSize = MappableKey.sqrMaxFont;
-                KeymapText.horizontalOverflow = MappableKey.sqrHOverflow;
-            }
-            else if (keyboardSkinFor.skinType == ButtonSkinType.WIDE)
-            {
-                KeymapText.fontSize = MappableKey.wideFontSize;
-                KeymapText.alignment = MappableKey.wideAlignment;
-                KeymapText.rectTransform.anchoredPosition = new(
-                    MappableKey.wideX,
-                    KeymapText.rectTransform.anchoredPosition.y
-                );
-                KeymapText.rectTransform.SetSizeWithCurrentAnchors(
-                    RectTransform.Axis.Horizontal,
-                    MappableKey.wideWidth
-                );
-                KeymapText.resizeTextForBestFit = MappableKey.wideBestFit;
-                KeymapText.horizontalOverflow = MappableKey.wideHOverflow;
-            }
-            else
-                KeymapText.alignment = skins.labelAlignment;
+            ShowCurrentValue();
+    }
 
-            KeymapText.GetComponent<FixVerticalAlign>().AlignTextKeymap();
+    /// <summary>
+    /// The button skin for a key with a fallback for keys unbindable in vanilla.
+    /// </summary>
+    protected static ButtonSkin GetSkinFor(Key key)
+    {
+        var skins = UIButtonSkins;
+        var skin = skins.GetButtonSkinFor(key.ToString());
+        if (skin.skinType == ButtonSkinType.BLANK)
+        {
+            skin.sprite = skins.rectangleKey;
+            skin.skinType = ButtonSkinType.WIDE;
+            skin.symbol = key switch
+            {
+                Key.LeftCommand => "L Cmd",
+                Key.RightCommand => "R Cmd",
+                _ => skin.symbol,
+            };
         }
+        return skin;
+    }
+
+    /// <summary>
+    /// The width a sprite visually occupies within a key cap RectTransform
+    /// </summary>
+    protected static float RenderedSpriteWidth(Sprite sprite, Vector2 slotSize) =>
+        Mathf.Min(slotSize.x, sprite.rect.width / sprite.rect.height * slotSize.y);
+
+    /// <summary>
+    /// The horizontal offset that centers a key label on the keycap sprite.
+    /// </summary>
+    private static float CapLabelOffset(Image image)
+    {
+        var slot = image.rectTransform.sizeDelta;
+        return (slot.x - RenderedSpriteWidth(image.sprite, slot)) / 2;
+    }
+
+    /// <summary>
+    /// Apply the visual style for a single key cap from its button skin.
+    /// </summary>
+    protected void ApplyButtonSkin(Image image, Text text, ButtonSkin skin)
+    {
+        var skins = UIButtonSkins;
+        image.sprite = skin.sprite != null ? skin.sprite : skins.blankKey;
+        text.text = skin.symbol;
+        if (skin.skinType == ButtonSkinType.SQUARE)
+        {
+            text.fontSize = MappableKey.sqrFontSize;
+            text.alignment = MappableKey.sqrAlignment;
+            text.rectTransform.anchoredPosition = new(
+                CapLabelOffset(image),
+                text.rectTransform.anchoredPosition.y
+            );
+            text.rectTransform.SetSizeWithCurrentAnchors(
+                RectTransform.Axis.Horizontal,
+                MappableKey.sqrWidth
+            );
+            text.resizeTextForBestFit = MappableKey.sqrBestFit;
+            text.resizeTextMinSize = MappableKey.sqrMinFont;
+            text.resizeTextMaxSize = MappableKey.sqrMaxFont;
+            text.horizontalOverflow = MappableKey.sqrHOverflow;
+        }
+        else if (skin.skinType == ButtonSkinType.WIDE)
+        {
+            text.fontSize = MappableKey.wideFontSize;
+            text.alignment = MappableKey.wideAlignment;
+            text.rectTransform.anchoredPosition = new(
+                CapLabelOffset(image),
+                text.rectTransform.anchoredPosition.y
+            );
+            text.rectTransform.SetSizeWithCurrentAnchors(
+                RectTransform.Axis.Horizontal,
+                MappableKey.wideWidth
+            );
+            text.resizeTextForBestFit = MappableKey.wideBestFit;
+            text.horizontalOverflow = MappableKey.wideHOverflow;
+        }
+        else
+            text.alignment = skins.labelAlignment;
+
+        text.GetComponent<FixVerticalAlign>().AlignTextKeymap();
     }
 
     internal void AbortRebind()
@@ -238,14 +235,13 @@ internal class CustomMappableKey
         if (!isListening || KeymapText == null || KeymapImage == null)
             return;
 
-        interactable = true;
-        isListening = false;
-        ShowCurrentKeyCode();
+        StopListening();
+        ShowCurrentBinding();
     }
 
-    public new void OnSubmit(BaseEventData eventData) => ListenForNewButton();
+    public new void OnSubmit(BaseEventData eventData) => StartListening();
 
-    public new void OnPointerClick(PointerEventData eventData) => ListenForNewButton();
+    public new void OnPointerClick(PointerEventData eventData) => StartListening();
 
     public new void OnCancel(BaseEventData eventData)
     {
