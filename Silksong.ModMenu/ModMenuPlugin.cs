@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Logging;
 using MonoDetour;
 using MonoDetour.HookGen;
@@ -109,21 +110,34 @@ public partial class ModMenuPlugin : BaseUnityPlugin
     }
 
     private static AbstractMenuScreen? modsMenu;
+    private static (string Guid, BaseUnityPlugin Instance)[]? modsMenuIdentity;
 
     private static AbstractMenuScreen GetModsMenu()
     {
+        var identity = Chainloader
+            .PluginInfos.Select(info => (info.Key, info.Value.Instance))
+            .ToArray();
         if (modsMenu != null)
-            return modsMenu;
+        {
+            if (identity.SequenceEqual(modsMenuIdentity ?? []))
+                return modsMenu;
+
+            Destroy(modsMenu.Container);
+        }
 
         PaginatedMenuScreenBuilder builder = new("Mods");
         builder.AddRange(Registry.GenerateAllMenuElements());
         var menu = builder.Build();
 
         modsMenu = menu;
+        modsMenuIdentity = identity;
         menu.OnDispose += () =>
         {
             if (modsMenu == menu)
+            {
                 modsMenu = null;
+                modsMenuIdentity = null;
+            }
         };
         return menu;
     }
