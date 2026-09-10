@@ -88,6 +88,7 @@ internal class MenuPrefabs
         choiceChild.RemoveComponent<MenuSetting>();
         var moh = choiceChild.GetComponent<MenuOptionHorizontal>();
         moh.optionList = ["###INTERNAL###"];
+        moh.selectedOptionIndex = 0;
         moh.menuSetting = null;
         moh.localizeText = false;
         moh.applyButton = null;
