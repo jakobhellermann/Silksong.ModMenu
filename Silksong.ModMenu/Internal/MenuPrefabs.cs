@@ -33,6 +33,8 @@ internal class MenuPrefabs
     private readonly GameObject scrollPaneTemplate;
     private readonly GameObject colorSwatchTemplate;
 
+    private readonly float settingsRowWidth;
+
     private MenuPrefabs(UIManager uiManager)
     {
         canvas = uiManager.gameObject.FindChild("UICanvas")!;
@@ -97,6 +99,8 @@ internal class MenuPrefabs
             .RemoveComponent<ChangeTextFontScaleOnHandHeld>();
         choiceChild.FindChild("Menu Option Text")!.RemoveComponent<ChangeTextFontScaleOnHandHeld>();
         choiceChild.FindChild("Description")!.RemoveComponent<ChangeTextFontScaleOnHandHeld>();
+
+        settingsRowWidth = choiceChild.RectTransform.sizeDelta.x;
 
         textButtonTemplate = Object.Instantiate(optionsScreen.FindChild("Content/GameOptions")!);
         textButtonTemplate.SetActive(false);
@@ -235,6 +239,7 @@ internal class MenuPrefabs
     internal GameObject NewKeyBindContainer(out CustomMappableKey customMappableKey)
     {
         var obj = Object.Instantiate(keyBindTemplate);
+        obj.RectTransform.sizeDelta = obj.RectTransform.sizeDelta with { x = settingsRowWidth };
         customMappableKey = CustomMappableKey.Replace(obj.GetComponent<MappableKey>());
         return obj;
     }
