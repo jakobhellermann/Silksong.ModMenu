@@ -21,8 +21,9 @@ namespace Silksong.ModMenu;
 public partial class ModMenuPlugin : BaseUnityPlugin
 {
     private static ModMenuPlugin? instance;
-    private static TextButton? modOptionsButton;
-    private static MenuButtonList? modOptionsButtonList;
+
+    private TextButton? modOptionsButton;
+    private MenuButtonList? modOptionsButtonList;
 
     private void Awake()
     {
@@ -45,7 +46,7 @@ public partial class ModMenuPlugin : BaseUnityPlugin
         DefaultMonoDetourManager.Instance.Dispose();
     }
 
-    private static void RemoveModsButton()
+    private void RemoveModsButton()
     {
         if (modOptionsButton == null)
             return;
@@ -94,17 +95,19 @@ public partial class ModMenuPlugin : BaseUnityPlugin
         var optionsScreen = self.optionsMenuScreen;
 
         // Insert the button at the desired index.
-        modOptionsButton = new("Mods") // TODO: Support localization.
+        instance.modOptionsButton = new("Mods") // TODO: Support localization.
         {
             OnSubmit = () => MenuScreenNavigation.Show(GetModsMenu()),
         };
-        modOptionsButton.SetGameObjectParent(optionsScreen.gameObject.FindChild("Content")!);
+        instance.modOptionsButton.SetGameObjectParent(
+            optionsScreen.gameObject.FindChild("Content")!
+        );
 
         // Track the selectable at the correct index (BackButton is on the end of the list from a separate container).
-        modOptionsButtonList = optionsScreen.gameObject.GetComponent<MenuButtonList>();
-        List<MenuButtonList.Entry> entries = [.. modOptionsButtonList.entries];
-        entries.Insert(5, new() { selectable = modOptionsButton.MenuButton });
-        modOptionsButtonList.entries = [.. entries];
+        instance.modOptionsButtonList = optionsScreen.gameObject.GetComponent<MenuButtonList>();
+        List<MenuButtonList.Entry> entries = [.. instance.modOptionsButtonList.entries];
+        entries.Insert(5, new() { selectable = instance.modOptionsButton.MenuButton });
+        instance.modOptionsButtonList.entries = [.. entries];
     }
 
     private static AbstractMenuScreen? modsMenu;
