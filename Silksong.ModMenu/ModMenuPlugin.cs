@@ -30,7 +30,7 @@ public partial class ModMenuPlugin : BaseUnityPlugin
         instance = this;
 
         // Hot reload after UIManager.Awake has already been called
-        var uiManager = UIManager._instance;
+        var uiManager = UIManager.instance;
         if (uiManager != null)
             ModifyUICanvas(uiManager);
     }
@@ -94,19 +94,17 @@ public partial class ModMenuPlugin : BaseUnityPlugin
         var optionsScreen = self.optionsMenuScreen;
 
         // Insert the button at the desired index.
-        TextButton modOptions = new("Mods") // TODO: Support localization.
+        modOptionsButton = new("Mods") // TODO: Support localization.
         {
             OnSubmit = () => MenuScreenNavigation.Show(GetModsMenu()),
         };
-        modOptions.SetGameObjectParent(optionsScreen.gameObject.FindChild("Content")!);
-        modOptionsButton = modOptions;
+        modOptionsButton.SetGameObjectParent(optionsScreen.gameObject.FindChild("Content")!);
 
         // Track the selectable at the correct index (BackButton is on the end of the list from a separate container).
-        var mbl = optionsScreen.gameObject.GetComponent<MenuButtonList>();
-        modOptionsButtonList = mbl;
-        List<MenuButtonList.Entry> entries = [.. mbl.entries];
-        entries.Insert(5, new() { selectable = modOptions.MenuButton });
-        mbl.entries = [.. entries];
+        modOptionsButtonList = optionsScreen.gameObject.GetComponent<MenuButtonList>();
+        List<MenuButtonList.Entry> entries = [.. modOptionsButtonList.entries];
+        entries.Insert(5, new() { selectable = modOptionsButton.MenuButton });
+        modOptionsButtonList.entries = [.. entries];
     }
 
     private static AbstractMenuScreen? modsMenu;

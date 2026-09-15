@@ -146,7 +146,7 @@ public static class MenuScreenNavigation
     /// </summary>
     internal static void CloseAll()
     {
-        var ui = UIManager._instance;
+        var ui = UIManager.instance;
         if (ui == null || history.Count == 0)
             return;
 
