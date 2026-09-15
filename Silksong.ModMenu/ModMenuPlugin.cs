@@ -111,7 +111,7 @@ public partial class ModMenuPlugin : BaseUnityPlugin
     }
 
     private static AbstractMenuScreen? modsMenu;
-    private static (string Guid, BaseUnityPlugin Instance)[]? modsMenuIdentity;
+    private static (string Guid, BaseUnityPlugin Instance)[] modsMenuIdentity = [];
 
     private static AbstractMenuScreen GetModsMenu()
     {
@@ -120,7 +120,7 @@ public partial class ModMenuPlugin : BaseUnityPlugin
             .ToArray();
         if (modsMenu != null)
         {
-            if (identity.SequenceEqual(modsMenuIdentity ?? []))
+            if (identity.SequenceEqual(modsMenuIdentity))
                 return modsMenu;
 
             Destroy(modsMenu.Container);
@@ -137,7 +137,7 @@ public partial class ModMenuPlugin : BaseUnityPlugin
             if (modsMenu == menu)
             {
                 modsMenu = null;
-                modsMenuIdentity = null;
+                modsMenuIdentity = [];
             }
         };
         return menu;
