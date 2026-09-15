@@ -231,10 +231,11 @@ internal class MenuPrefabs
         return obj;
     }
 
-    internal GameObject NewKeyBindContainer(out CustomMappableKey customMappableKey)
+    internal GameObject NewKeyBindContainer<T>(out T customMappableKey)
+        where T : CustomMappableKey
     {
         var obj = Object.Instantiate(keyBindTemplate);
-        customMappableKey = CustomMappableKey.Replace(obj.GetComponent<MappableKey>());
+        customMappableKey = CustomMappableKey.Replace<T>(obj.GetComponent<MappableKey>());
         return obj;
     }
 
