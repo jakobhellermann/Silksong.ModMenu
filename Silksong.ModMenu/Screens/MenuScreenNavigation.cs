@@ -7,6 +7,7 @@ using MonoDetour.DetourTypes;
 using MonoDetour.HookGen;
 using Silksong.ModMenu.Internal;
 using Steamworks;
+using UnityEngine;
 
 namespace Silksong.ModMenu.Screens;
 
@@ -138,6 +139,27 @@ public static class MenuScreenNavigation
             }
         }
         ui.StartCoroutine(Routine());
+    }
+
+    /// <summary>
+    /// Close and destroy all open custom menu screens.
+    /// </summary>
+    internal static void CloseAll()
+    {
+        var ui = UIManager.instance;
+        if (ui == null || history.Count == 0)
+            return;
+
+        ui.HideMenuInstant(history.Peek().MenuScreen);
+
+        while (history.Count > 0)
+            UnityEngine.Object.Destroy(history.Pop().Container);
+
+        if (lastBaseMenuScreen is var (state, menu))
+        {
+            ui.StartCoroutine(ui.ShowMenu(menu));
+            ui.menuState = state;
+        }
     }
 
     private static void CaptureBaseMenuState()

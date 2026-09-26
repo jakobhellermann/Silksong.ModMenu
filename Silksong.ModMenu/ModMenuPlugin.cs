@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.Linq;
 using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Logging;
 using MonoDetour;
 using MonoDetour.HookGen;
@@ -20,10 +22,43 @@ public partial class ModMenuPlugin : BaseUnityPlugin
 {
     private static ModMenuPlugin? instance;
 
+    private TextButton? modOptionsButton;
+    private MenuButtonList? modOptionsButtonList;
+
     private void Awake()
     {
         MonoDetourManager.InvokeHookInitializers(typeof(ModMenuPlugin).Assembly);
         instance = this;
+
+        // Hot reload after UIManager.Awake has already been called
+        var uiManager = UIManager.instance;
+        if (uiManager != null)
+            ModifyUICanvas(uiManager);
+    }
+
+    private void OnDestroy()
+    {
+        RemoveModsButton();
+        MenuScreenNavigation.CloseAll();
+
+        instance = null;
+
+        DefaultMonoDetourManager.Instance.Dispose();
+    }
+
+    private void RemoveModsButton()
+    {
+        if (modOptionsButton == null)
+            return;
+
+        if (modOptionsButtonList != null)
+            modOptionsButtonList.entries = modOptionsButtonList
+                .entries.Where(e => e.selectable != modOptionsButton.MenuButton)
+                .ToArray();
+
+        modOptionsButton.Dispose();
+        modOptionsButton = null;
+        modOptionsButtonList = null;
     }
 
     internal static void LogWarning(string message)
@@ -60,35 +95,50 @@ public partial class ModMenuPlugin : BaseUnityPlugin
         var optionsScreen = self.optionsMenuScreen;
 
         // Insert the button at the desired index.
-        TextButton modOptions = new("Mods") // TODO: Support localization.
+        instance.modOptionsButton = new("Mods") // TODO: Support localization.
         {
             OnSubmit = () => MenuScreenNavigation.Show(GetModsMenu()),
         };
-        modOptions.SetGameObjectParent(optionsScreen.gameObject.FindChild("Content")!);
+        instance.modOptionsButton.SetGameObjectParent(
+            optionsScreen.gameObject.FindChild("Content")!
+        );
 
         // Track the selectable at the correct index (BackButton is on the end of the list from a separate container).
-        var mbl = optionsScreen.gameObject.GetComponent<MenuButtonList>();
-        List<MenuButtonList.Entry> entries = [.. mbl.entries];
-        entries.Insert(5, new() { selectable = modOptions.MenuButton });
-        mbl.entries = [.. entries];
+        instance.modOptionsButtonList = optionsScreen.gameObject.GetComponent<MenuButtonList>();
+        List<MenuButtonList.Entry> entries = [.. instance.modOptionsButtonList.entries];
+        entries.Insert(5, new() { selectable = instance.modOptionsButton.MenuButton });
+        instance.modOptionsButtonList.entries = [.. entries];
     }
 
     private static AbstractMenuScreen? modsMenu;
+    private static (string Guid, BaseUnityPlugin Instance)[] modsMenuIdentity = [];
 
     private static AbstractMenuScreen GetModsMenu()
     {
+        var identity = Chainloader
+            .PluginInfos.Select(info => (info.Key, info.Value.Instance))
+            .ToArray();
         if (modsMenu != null)
-            return modsMenu;
+        {
+            if (identity.SequenceEqual(modsMenuIdentity))
+                return modsMenu;
+
+            Destroy(modsMenu.Container);
+        }
 
         PaginatedMenuScreenBuilder builder = new("Mods");
         builder.AddRange(Registry.GenerateAllMenuElements());
         var menu = builder.Build();
 
         modsMenu = menu;
+        modsMenuIdentity = identity;
         menu.OnDispose += () =>
         {
             if (modsMenu == menu)
+            {
                 modsMenu = null;
+                modsMenuIdentity = [];
+            }
         };
         return menu;
     }
